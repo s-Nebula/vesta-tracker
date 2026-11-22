@@ -5,8 +5,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vesta_tracker/main.dart';
 import 'package:vesta_tracker/screens/setup_screen.dart';
 import 'package:vesta_tracker/theme_notifier.dart';
+import 'package:vesta_tracker/l10n/tr.dart';
 
 void main() {
+  // The tests check the Spanish texts.
+  setUpAll(() => debugSetAppLanguage('es'));
+
   setUp(() {
     SharedPreferences.setMockInitialValues({});
   });

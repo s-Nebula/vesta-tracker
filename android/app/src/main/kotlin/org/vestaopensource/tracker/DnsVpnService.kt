@@ -14,6 +14,7 @@ import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import org.json.JSONArray
+import org.json.JSONObject
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.DatagramPacket
@@ -36,9 +37,13 @@ class DnsVpnService : VpnService() {
         private const val NOTIFICATION_ID = 7312
         private const val PREFS = "FlutterSharedPreferences"
         private const val DOMAINS_KEY = "flutter.blocked_domains_json"
-        private const val CHECKED_AT_KEY = "flutter.privacy_authorization_checked_at_ms"
-        private const val AUTHORIZATION_LEASE_MS = 120_000L
+        private const val WEB_PROTECTION_KEY = "flutter.web_protection_json"
         private const val WATCHDOG_INTERVAL_MS = 5_000L
+
+        /** Tunnel state visible to AppBlockerService (self-repair). */
+        @Volatile
+        var isActive: Boolean = false
+            private set
 
         private const val VPN_ADDRESS = "10.111.222.1"
         private const val DNS_ADDRESS = "10.111.222.2"
@@ -49,16 +54,8 @@ class DnsVpnService : VpnService() {
     private val running = AtomicBoolean(false)
     private val watchdogHandler = Handler(Looper.getMainLooper())
 
-    private fun isAuthorized(): Boolean {
-        val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val checkedAt = prefs.getLong(CHECKED_AT_KEY, 0L)
-        val age = System.currentTimeMillis() - checkedAt
-
-        return checkedAt > 0L &&
-            age >= 0L &&
-            age < AUTHORIZATION_LEASE_MS &&
-            prefs.getBoolean("flutter.privacy_domain_filtering_enabled", false)
-    }
+    private fun isAuthorized(): Boolean =
+        PrivacyLease.isAuthorized(this, "domain_filtering")
 
     private val authorizationWatchdog = object : Runnable {
         override fun run() {
@@ -108,7 +105,7 @@ class DnsVpnService : VpnService() {
 
         try {
             val descriptor = Builder()
-                .setSession("Vesta Tracker - Protección DNS")
+                .setSession(Lang.t("Vesta Tracker - Protección DNS", "Vesta Tracker - DNS protection"))
                 .setMtu(1500)
                 .addAddress(VPN_ADDRESS, 32)
                 .addDnsServer(DNS_ADDRESS)
@@ -123,6 +120,7 @@ class DnsVpnService : VpnService() {
 
             tunnel = descriptor
             running.set(true)
+            isActive = true
             watchdogHandler.removeCallbacks(authorizationWatchdog)
             watchdogHandler.postDelayed(authorizationWatchdog, WATCHDOG_INTERVAL_MS)
 
@@ -162,12 +160,30 @@ class DnsVpnService : VpnService() {
 
                 val response = try {
                     val domain = readQueryDomain(dnsQuery)
-                    if (domain != null && isBlocked(domain)) {
-                        Log.i(TAG, "Dominio bloqueado: $domain")
-                        BlockAlertReporter.reportBlockedDomain(this, domain, "vpn")
-                        makeDnsError(dnsQuery, 3)
+                    val web = webProtection()
+                    val safeTarget = if (domain != null && web.safeSearch) {
+                        DnsTools.safeSearchTarget(domain)
                     } else {
-                        forwardDns(dnsQuery) ?: makeDnsError(dnsQuery, 2)
+                        null
+                    }
+
+                    when {
+                        domain != null && isBlocked(domain) -> {
+                            Log.i(TAG, "Dominio bloqueado: $domain")
+                            BlockAlertReporter.reportBlockedDomain(this, domain, "vpn")
+                            makeDnsError(dnsQuery, 3)
+                        }
+                        // Firefox turns its DoH off if this domain does not exist.
+                        domain != null && DnsTools.isDohCanary(domain) ->
+                            makeDnsError(dnsQuery, 3)
+                        domain != null && web.blockDoh && DnsTools.isDohHost(domain) -> {
+                            Log.i(TAG, "Proveedor de DNS cifrado bloqueado: $domain")
+                            makeDnsError(dnsQuery, 3)
+                        }
+                        safeTarget != null ->
+                            safeSearchResponse(dnsQuery, safeTarget)
+                                ?: makeDnsError(dnsQuery, 2)
+                        else -> forwardDns(dnsQuery) ?: makeDnsError(dnsQuery, 2)
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error procesando consulta DNS", e)
@@ -304,6 +320,54 @@ class DnsVpnService : VpnService() {
         }
     }
 
+    private data class WebProtection(val safeSearch: Boolean, val blockDoh: Boolean)
+
+    @Volatile private var webJson: String? = null
+    @Volatile private var webCache = WebProtection(safeSearch = false, blockDoh = true)
+
+    /** Guardian settings (controls/web_protection), copied by Flutter. */
+    private fun webProtection(): WebProtection {
+        val json = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(WEB_PROTECTION_KEY, null)
+        if (json != webJson) {
+            webJson = json
+            webCache = try {
+                val data = if (json.isNullOrBlank()) null else JSONObject(json)
+                WebProtection(
+                    safeSearch = data?.optBoolean("safeSearch", false) ?: false,
+                    // Encrypted DNS is blocked by default: without this the filter
+                    // is turned off with a browser option.
+                    blockDoh = data?.optBoolean("blockDoh", true) ?: true,
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Ajustes de protección web no válidos", e)
+                WebProtection(safeSearch = false, blockDoh = true)
+            }
+        }
+        return webCache
+    }
+
+    /**
+     * Answers a search engine query with the IPs of its safe version.
+     * Returns null if it could not be resolved (SERVFAIL is returned: better
+     * than letting the search through unfiltered).
+     */
+    private fun safeSearchResponse(query: ByteArray, target: String): ByteArray? {
+        return when (DnsTools.queryType(query)) {
+            DnsTools.TYPE_A -> {
+                val id = (System.nanoTime() and 0xFFFF).toInt()
+                val upstream = forwardDns(DnsTools.buildQuery(id, target, DnsTools.TYPE_A))
+                    ?: return null
+                val ips = DnsTools.parseARecords(upstream)
+                if (ips.isEmpty()) null else DnsTools.buildAnswer(query, ips)
+            }
+            // No IPv6 or HTTPS records: forces the client to use the redirected
+            // IPv4 instead of connecting to the unfiltered version.
+            DnsTools.TYPE_AAAA, DnsTools.TYPE_HTTPS -> DnsTools.buildAnswer(query, emptyList())
+            else -> forwardDns(query)
+        }
+    }
+
     private fun forwardDns(query: ByteArray): ByteArray? {
         if (!isAuthorized()) return null
 
@@ -368,7 +432,7 @@ class DnsVpnService : VpnService() {
         response[2] = (newFlags ushr 8).toByte()
         response[3] = newFlags.toByte()
 
-        // Sin respuestas, autoridad ni registros adicionales.
+        // No answers, authority or additional records.
         response[6] = 0
         response[7] = 0
         response[8] = 0
@@ -453,7 +517,7 @@ class DnsVpnService : VpnService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Protección DNS de Vesta",
+                Lang.t("Protección DNS de Vesta", "Vesta DNS protection"),
                 NotificationManager.IMPORTANCE_LOW
             )
             getSystemService(NotificationManager::class.java)
@@ -471,7 +535,7 @@ class DnsVpnService : VpnService() {
 
         return builder
             .setContentTitle("Vesta Tracker")
-            .setContentText("Protección de dominios activa")
+            .setContentText(Lang.t("Protección de dominios activa", "Domain protection active"))
             .setSmallIcon(applicationInfo.icon)
             .setOngoing(true)
             .build()
@@ -480,6 +544,7 @@ class DnsVpnService : VpnService() {
     private fun stopVpn() {
         watchdogHandler.removeCallbacks(authorizationWatchdog)
         running.set(false)
+        isActive = false
 
         try {
             tunnel?.close()
@@ -494,6 +559,19 @@ class DnsVpnService : VpnService() {
     }
 
     override fun onRevoke() {
+        // Android calls onRevoke when the user disconnects the VPN from
+        // Settings or when another app turns on its own VPN. If protection
+        // was still authorised, the guardians are notified.
+        if (isAuthorized()) {
+            BlockAlertReporter.reportTamper(
+                this,
+                purpose = "domain_filtering",
+                key = "vpn_revoked",
+                title = Lang.t("Filtro web desactivado", "Web filter turned off"),
+                subtitle = Lang.t("Se desconectó la protección DNS de Vesta en el dispositivo.", "Vesta DNS protection was disconnected on the device.")
+            )
+        }
+
         stopVpn()
         stopSelf()
         super.onRevoke()

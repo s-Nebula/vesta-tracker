@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:vesta_tracker/l10n/tr.dart';
 class SuccessScreen extends StatefulWidget {
   final String childId;
 
@@ -77,8 +78,8 @@ class _SuccessScreenState extends State<SuccessScreen> {
                     ),
                   ),
                   const SizedBox(height: 35),
-                  const Text(
-                    '¡Dispositivo vinculado!',
+                  Text(
+                    tr('¡Dispositivo vinculado!'),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: _ivory,
@@ -87,9 +88,8 @@ class _SuccessScreenState extends State<SuccessScreen> {
                     ),
                   ),
                   const SizedBox(height: 13),
-                  const Text(
-                    'Este dispositivo ya está conectado '
-                    'de forma segura con Vesta Padre.',
+                  Text(
+                    tr('Este dispositivo ya está conectado de forma segura con Vesta Padre.'),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: _beige,
@@ -110,7 +110,7 @@ class _SuccessScreenState extends State<SuccessScreen> {
                         color: const Color(0xFF59404A),
                       ),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
@@ -120,7 +120,7 @@ class _SuccessScreenState extends State<SuccessScreen> {
                         ),
                         SizedBox(width: 10),
                         Text(
-                          'Preparando seguimiento...',
+                          tr('Preparando seguimiento...'),
                           style: TextStyle(
                             color: _ivory,
                             fontWeight: FontWeight.w600,
@@ -139,8 +139,8 @@ class _SuccessScreenState extends State<SuccessScreen> {
                     ),
                   ),
                   const SizedBox(height: 30),
-                  const Text(
-                    'VESTA TRACKER',
+                  Text(
+                    tr('VESTA TRACKER'),
                     style: TextStyle(
                       color: _beige,
                       fontSize: 12,

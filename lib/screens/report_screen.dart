@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'package:vesta_tracker/l10n/tr.dart';
 class ReportService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
@@ -99,8 +100,8 @@ class _ReportScreenState extends State<ReportScreen> {
         backgroundColor: _background,
         foregroundColor: _ivory,
         elevation: 0,
-        title: const Text(
-          'Reporte de actividad',
+        title: Text(
+          tr('Reporte de actividad'),
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
@@ -128,11 +129,11 @@ class _ReportScreenState extends State<ReportScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'FECHA DEL REPORTE',
+                        Text(
+                          tr('FECHA DEL REPORTE'),
                           style: TextStyle(
                             color: _beige,
-                            fontSize: 10,
+                            fontSize: 12,
                             letterSpacing: 1.3,
                             fontWeight: FontWeight.bold,
                           ),
@@ -151,7 +152,7 @@ class _ReportScreenState extends State<ReportScreen> {
                   ),
                   IconButton(
                     onPressed: () => _selectDate(context),
-                    tooltip: 'Cambiar fecha',
+                    tooltip: tr('Cambiar fecha'),
                     style: IconButton.styleFrom(
                       backgroundColor: _wine,
                       foregroundColor: _ivory,
@@ -162,8 +163,8 @@ class _ReportScreenState extends State<ReportScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'Resumen diario',
+            Text(
+              tr('Resumen diario'),
               style: TextStyle(
                 color: _ivory,
                 fontSize: 18,
@@ -184,7 +185,7 @@ class _ReportScreenState extends State<ReportScreen> {
                   if (snapshot.hasError) {
                     return Center(
                       child: Text(
-                        'Error al cargar reporte: ${snapshot.error}',
+                        tr('Error al cargar reporte: {0}', [snapshot.error]),
                         textAlign: TextAlign.center,
                         style: const TextStyle(color: _beige),
                       ),
@@ -192,9 +193,9 @@ class _ReportScreenState extends State<ReportScreen> {
                   }
 
                   if (!snapshot.hasData) {
-                    return const Center(
+                    return Center(
                       child: Text(
-                        'No hay datos disponibles.',
+                        tr('No hay datos disponibles.'),
                         style: TextStyle(color: _beige),
                       ),
                     );
@@ -216,7 +217,7 @@ class _ReportScreenState extends State<ReportScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Row(
+                            Row(
                               children: [
                                 Icon(
                                   Icons.location_on_rounded,
@@ -226,7 +227,7 @@ class _ReportScreenState extends State<ReportScreen> {
                                 SizedBox(width: 10),
                                 Expanded(
                                   child: Text(
-                                    'Registros de ubicación',
+                                    tr('Registros de ubicación'),
                                     style: TextStyle(
                                       color: _ivory,
                                       fontWeight: FontWeight.w600,
@@ -245,8 +246,8 @@ class _ReportScreenState extends State<ReportScreen> {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            const Text(
-                              'Puntos registrados durante el día',
+                            Text(
+                              tr('Puntos registrados durante el día'),
                               style: TextStyle(
                                 color: _beige,
                                 fontSize: 12,
@@ -284,8 +285,8 @@ class _ReportScreenState extends State<ReportScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
-                                    'Estado del rastreo',
+                                  Text(
+                                    tr('Estado del rastreo'),
                                     style: TextStyle(
                                       color: _ivory,
                                       fontWeight: FontWeight.bold,
@@ -294,8 +295,8 @@ class _ReportScreenState extends State<ReportScreen> {
                                   const SizedBox(height: 5),
                                   Text(
                                     hasActivity
-                                        ? 'Activo durante el día'
-                                        : 'Sin actividad registrada',
+                                        ? tr('Activo durante el día')
+                                        : tr('Sin actividad registrada'),
                                     style: const TextStyle(
                                       color: _beige,
                                       fontSize: 12,

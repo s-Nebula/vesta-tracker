@@ -5,7 +5,13 @@ plugins {
 }
 
 def keystoreProperties = new Properties()
-def keystorePropertiesFile = rootProject.file('key.properties')
+// La clave de firma y sus contraseñas viven fuera del proyecto
+// (vesta-build/secrets/signing) para que nunca acaben en el repositorio.
+// Se puede indicar otra ruta con la variable VESTA_KEY_PROPERTIES.
+def keystorePropertiesFile = file(
+    System.getenv("VESTA_KEY_PROPERTIES") ?:
+        "${rootProject.projectDir}/../../../secrets/signing/key.properties"
+)
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
@@ -36,8 +42,8 @@ android {
         applicationId = "org.vestaopensource.tracker"
         minSdkVersion = flutter.minSdkVersion
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
         multiDexEnabled = true
     }
 

@@ -1,16 +1,24 @@
-# vesta_tracker
+# Vesta Tracker (vesta_tracker)
 
-A new Flutter project.
+Minor's app of **Vesta Security**. It links with **Vesta Parent** by QR code and,
+within the purposes the guardians have authorised, shares location and device
+status, applies study mode, time limits, app blocking and web filtering (local DNS
+VPN with safe search), and lets the minor send SOS alerts and requests.
 
-## Getting Started
+## Development
 
-This project is a starting point for a Flutter application.
+- Flutter 3 / Dart 3 plus native Kotlin services
+  (`android/app/src/main/kotlin`: AccessibilityService, VpnService, usage stats).
+- UI language: Spanish and English (`lib/l10n/`), following the phone's language.
+  Native texts use `Lang.t(es, en)`.
 
-A few resources to get you started if this is your first Flutter project:
+```bash
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --release   # needs android/key.properties (not in the repository)
+```
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## Licence
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Proprietary software. © FORBIDDEN S.A.S. All rights reserved. See `LICENSE`.

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:usage_stats/usage_stats.dart';
 
+import 'package:vesta_tracker/l10n/tr.dart';
 class UsageAccessCard extends StatefulWidget {
   final Future<void> Function()? onPermissionGranted;
 
@@ -69,7 +70,7 @@ class _UsageAccessCardState extends State<UsageAccessCard>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudieron abrir los ajustes: $e')),
+        SnackBar(content: Text(tr('No se pudieron abrir los ajustes: {0}', [e]))),
       );
     }
   }
@@ -132,10 +133,10 @@ class _UsageAccessCardState extends State<UsageAccessCard>
                   children: [
                     Text(
                       _loading
-                          ? 'Verificando permiso'
+                          ? tr('Verificando permiso')
                           : _granted
-                              ? 'Estadísticas habilitadas'
-                              : 'Estadísticas de uso',
+                              ? tr('Estadísticas habilitadas')
+                              : tr('Estadísticas de uso'),
                       style: const TextStyle(
                         color: _ivory,
                         fontSize: 15,
@@ -156,10 +157,10 @@ class _UsageAccessCardState extends State<UsageAccessCard>
                         const SizedBox(width: 7),
                         Text(
                           _loading
-                              ? 'Comprobando estado...'
+                              ? tr('Comprobando estado...')
                               : _granted
-                                  ? 'Permiso concedido'
-                                  : 'Requiere autorización',
+                                  ? tr('Permiso concedido')
+                                  : tr('Requiere autorización'),
                           style: TextStyle(
                             color: statusColor,
                             fontSize: 12,
@@ -176,10 +177,8 @@ class _UsageAccessCardState extends State<UsageAccessCard>
           const SizedBox(height: 16),
           Text(
             _granted
-                ? 'Vesta puede recopilar tiempo de pantalla, uso por '
-                    'aplicación y aperturas para generar los reportes.'
-                : 'Android requiere autorización manual para consultar '
-                    'el tiempo de uso de las aplicaciones.',
+                ? tr('Vesta puede recopilar tiempo de pantalla, uso por aplicación y aperturas para generar los reportes.')
+                : tr('Android requiere autorización manual para consultar el tiempo de uso de las aplicaciones.'),
             style: const TextStyle(
               color: _beige,
               fontSize: 13,
@@ -207,7 +206,7 @@ class _UsageAccessCardState extends State<UsageAccessCard>
                 child: ElevatedButton.icon(
                   onPressed: _openSettings,
                   icon: const Icon(Icons.settings_rounded),
-                  label: const Text('Abrir ajustes de Android'),
+                  label: Text(tr('Abrir ajustes de Android')),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.transparent,
                     foregroundColor: _ivory,

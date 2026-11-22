@@ -2,7 +2,7 @@ name: vesta_tracker
 description: "A new Flutter project."
 publish_to: 'none' 
 
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: '>=3.4.3 <4.0.0'
@@ -29,6 +29,7 @@ dependencies:
   device_info_plus: ^13.3.0
   connectivity_plus: ^7.3.1
   usage_stats: ^2.0.1
+  mobile_scanner: ^7.5.0
 
 dev_dependencies:
   flutter_launcher_icons: ^0.14.4

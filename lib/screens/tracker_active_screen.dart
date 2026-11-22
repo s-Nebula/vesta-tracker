@@ -8,9 +8,15 @@ import 'package:go_router/go_router.dart';
 import '../location_service.dart';
 import '../widgets/usage_access_card.dart';
 import '../services/usage_report_service.dart';
+import '../services/api_client.dart';
 import '../services/privacy_authorization_service.dart';
+import '../services/study_mode_state.dart';
+import '../services/sos_service.dart';
+import 'request_screen.dart';
+import 'transparency_screen.dart';
 import 'tracker_filter_service.dart';
 
+import 'package:vesta_tracker/l10n/tr.dart';
 class TrackerActiveScreen extends StatefulWidget {
   final String childId;
 
@@ -20,10 +26,19 @@ class TrackerActiveScreen extends StatefulWidget {
   State<TrackerActiveScreen> createState() => _TrackerActiveScreenState();
 }
 
-class _TrackerActiveScreenState extends State<TrackerActiveScreen> {
+class _TrackerActiveScreenState extends State<TrackerActiveScreen>
+    with WidgetsBindingObserver {
   bool _isLoading = true;
   bool _isNavigating = false;
+  bool _offline = false;
   bool _locationAuthorized = false;
+  bool _appFilteringAuthorized = false;
+  bool _domainFilteringAuthorized = false;
+  DateTime? _lastVerifiedAt;
+  StudyModeState _studyMode = StudyModeState.inactive;
+  Stream<DocumentSnapshot<Map<String, dynamic>>>? _telemetryStream;
+  StreamSubscription<Map<String, dynamic>?>? _unlinkSubscription;
+  Timer? _clockTimer;
 
   final TrackerFilterService _filterService = TrackerFilterService();
   StreamSubscription<List<Map<String, dynamic>>>? _filterSubscription;
@@ -31,10 +46,77 @@ class _TrackerActiveScreenState extends State<TrackerActiveScreen> {
 
   List<Map<String, dynamic>> _reglasActuales = [];
 
+  bool _sendingSos = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initService();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _openPendingRequest();
+      _reloadLocalState();
+    }
+  }
+
+  /// If the app was opened from the "App blocked" notice, open the request.
+  Future<void> _openPendingRequest() async {
+    try {
+      final request =
+          await _appsChannel.invokeMapMethod<String, dynamic>('consumePendingRequest');
+      if (request == null || !mounted || _isNavigating) return;
+      await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => RequestScreen(
+          childId: widget.childId,
+          initialPackage: request['packageName']?.toString(),
+          initialAppName: request['appName']?.toString(),
+          initialType: request['type']?.toString() ?? 'unlock_app',
+        ),
+      ));
+    } catch (e) {
+      debugPrint('No se pudo leer la petición pendiente: $e');
+    }
+  }
+
+  Future<void> _sendSos() async {
+    if (_sendingSos) return;
+    setState(() => _sendingSos = true);
+    final result = await SosService.send(widget.childId);
+    if (!mounted) return;
+    setState(() => _sendingSos = false);
+
+    final message = switch (result) {
+      SosResult.sent => tr('Aviso de emergencia enviado a tus tutores.'),
+      SosResult.queuedOffline =>
+        tr('No hay conexión: el aviso se enviará en cuanto vuelva internet. Si es urgente, llama al 123 o a tus tutores.'),
+      SosResult.notAuthorized =>
+        tr('Los avisos no están autorizados en este teléfono. Si es urgente, llama al 123 o a tus tutores.'),
+      SosResult.failed =>
+        tr('No se pudo enviar el aviso. Si es urgente, llama al 123.'),
+    };
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: Icon(
+          result == SosResult.sent ? Icons.check_circle_rounded : Icons.warning_rounded,
+          color: result == SosResult.sent ? _green : _amber,
+          size: 40,
+        ),
+        title: const Text('SOS'),
+        content: Text(message),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(tr('Entendido')),
+          ),
+        ],
+      ),
+    );
   }
 
   static const MethodChannel _appsChannel =
@@ -42,25 +124,29 @@ class _TrackerActiveScreenState extends State<TrackerActiveScreen> {
 
   Future<void> _syncInstalledApps() async {
     try {
-      if (!await PrivacyAuthorizationService.isAuthorized('app_filtering'))
+      if (!await PrivacyAuthorizationService.isAuthorized('app_filtering')) {
         return;
+        }
       final rawApps =
           await _appsChannel.invokeMethod<List<dynamic>>('getInstalledApps');
 
       if (rawApps == null) return;
-      if (!await PrivacyAuthorizationService.isAuthorized('app_filtering'))
+      if (!await PrivacyAuthorizationService.isAuthorized('app_filtering')) {
         return;
+        }
 
       final collection = FirebaseFirestore.instance
           .collection('children')
           .doc(widget.childId)
           .collection('installed_apps');
 
-      if (!await PrivacyAuthorizationService.isAuthorized('app_filtering'))
+      if (!await PrivacyAuthorizationService.isAuthorized('app_filtering')) {
         return;
+        }
       final existingSnapshot = await collection.get();
-      if (!await PrivacyAuthorizationService.isAuthorized('app_filtering'))
+      if (!await PrivacyAuthorizationService.isAuthorized('app_filtering')) {
         return;
+        }
       final existing = {
         for (final doc in existingSnapshot.docs) doc.id: doc.data()
       };
@@ -117,8 +203,9 @@ class _TrackerActiveScreenState extends State<TrackerActiveScreen> {
           );
         }
 
-        if (!await PrivacyAuthorizationService.isAuthorized('app_filtering'))
+        if (!await PrivacyAuthorizationService.isAuthorized('app_filtering')) {
           return;
+          }
         await batch.commit();
       }
 
@@ -177,45 +264,67 @@ class _TrackerActiveScreenState extends State<TrackerActiveScreen> {
     }
   }
 
-  Future<void> _refreshScreenAuthorization() async {
-    if (!mounted) return;
-
-    var locationAuthorized = false;
+  Future<void> _refreshScreenAuthorization({bool initial = false}) async {
+    if (!mounted || _isNavigating) return;
 
     try {
       await PrivacyAuthorizationService.refresh();
-      locationAuthorized =
-          await PrivacyAuthorizationService.isAuthorized('location');
+      if (mounted) setState(() => _offline = false);
+    } on DeviceUnlinkedException catch (e) {
+      debugPrint('Dispositivo desvinculado: $e');
+      await _volverAConfigurarLocalmente(unlinkedByGuardian: true);
+      return;
+    } on VestaApiException catch (e) {
+      debugPrint('No se pudo renovar autorización de pantalla: $e');
+      if (mounted) setState(() => _offline = e.isTransient);
     } catch (e) {
       debugPrint('No se pudo renovar autorización de pantalla: $e');
     } finally {
       await PrivacyAuthorizationService.applyNativeFlags();
     }
 
-    if (mounted) {
-      setState(() => _locationAuthorized = locationAuthorized);
-      await _cargarReglasFiltro();
-    }
+    await _reloadLocalState();
+    if (!initial) await _cargarReglasFiltro();
+  }
+
+  /// Reads the state shared by the UI, the background service and Kotlin.
+  Future<void> _reloadLocalState() async {
+    final location =
+        await PrivacyAuthorizationService.isAuthorized('location');
+    final apps =
+        await PrivacyAuthorizationService.isAuthorized('app_filtering');
+    final domains =
+        await PrivacyAuthorizationService.isAuthorized('domain_filtering');
+    final verifiedAt = await PrivacyAuthorizationService.lastVerifiedAt();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    final study = StudyModeState.fromJson(prefs.getString('study_mode_json'));
+
+    if (!mounted) return;
+    setState(() {
+      _locationAuthorized = location;
+      _appFilteringAuthorized = apps;
+      _domainFilteringAuthorized = domains;
+      _lastVerifiedAt = verifiedAt;
+      _studyMode = apps ? study : StudyModeState.inactive;
+    });
   }
 
   Future<void> _initService() async {
-    var locationAuthorized = false;
     try {
       final service = FlutterBackgroundService();
+
+      _unlinkSubscription = service
+          .on(LocationService.deviceUnlinkedEvent)
+          .listen((_) => _volverAConfigurarLocalmente(unlinkedByGuardian: true));
 
       if (!(await service.isRunning())) {
         await LocationService.initializeService();
       }
 
-      try {
-        await PrivacyAuthorizationService.refresh();
-        locationAuthorized =
-            await PrivacyAuthorizationService.isAuthorized('location');
-      } catch (e) {
-        debugPrint('No se pudo actualizar la autorización: $e');
-      } finally {
-        await PrivacyAuthorizationService.applyNativeFlags();
-      }
+      await _refreshScreenAuthorization(initial: true);
+      if (_isNavigating) return;
 
       if (await PrivacyAuthorizationService.isAuthorized('domain_filtering')) {
         try {
@@ -228,7 +337,7 @@ class _TrackerActiveScreenState extends State<TrackerActiveScreen> {
       }
 
       if (await PrivacyAuthorizationService.isAuthorized('app_filtering')) {
-        await _syncInstalledApps();
+        unawaited(_syncInstalledApps());
       } else {
         debugPrint('Catálogo de aplicaciones omitido: sin autorización.');
       }
@@ -236,41 +345,58 @@ class _TrackerActiveScreenState extends State<TrackerActiveScreen> {
       debugPrint('Error al inicializar: $e');
     }
 
-    if (mounted) {
+    if (mounted && !_isNavigating) {
       await _cargarReglasFiltro();
       _authorizationTimer ??= Timer.periodic(
         const Duration(seconds: 60),
         (_) => _refreshScreenAuthorization(),
       );
-      setState(() {
-        _locationAuthorized = locationAuthorized;
-        _isLoading = false;
-      });
+      // Study mode can start or end by schedule without anything changing
+      // on the server: it is re-evaluated every 30 s.
+      _clockTimer ??= Timer.periodic(
+        const Duration(seconds: 30),
+        (_) => _reloadLocalState(),
+      );
+      setState(() => _isLoading = false);
+      unawaited(_openPendingRequest());
     }
   }
 
-  Future<void> _volverAConfigurarLocalmente() async {
+  Future<void> _volverAConfigurarLocalmente({
+    bool unlinkedByGuardian = false,
+  }) async {
     if (_isNavigating) return;
     _isNavigating = true;
 
     try {
+      _authorizationTimer?.cancel();
+      _clockTimer?.cancel();
       await _filterSubscription?.cancel();
 
-      // Detener la VPN antes de eliminar la sesión local.
+      // Stop the VPN before deleting the local session.
       try {
         await _appsChannel.invokeMethod<bool>('stopDnsVpn');
       } catch (e) {
         debugPrint('No se pudo detener la VPN: $e');
       }
 
-      final service = FlutterBackgroundService();
-      service.invoke('stopService');
+      FlutterBackgroundService().invoke('stopService');
+      await PrivacyAuthorizationService.clearLocalLink();
+      await PrivacyAuthorizationService.applyNativeFlags();
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('child_id');
-      await prefs.remove('parent_id');
+      if (!mounted) return;
 
-      if (mounted) context.go('/setup');
+      if (unlinkedByGuardian) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              tr('El tutor desvinculó este dispositivo. Puedes vincularlo de nuevo con un código nuevo.'),
+            ),
+          ),
+        );
+      }
+
+      context.go('/setup');
     } catch (e) {
       debugPrint('Error al limpiar la sesión local: $e');
       _isNavigating = false;
@@ -279,237 +405,443 @@ class _TrackerActiveScreenState extends State<TrackerActiveScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _authorizationTimer?.cancel();
+    _clockTimer?.cancel();
     _filterSubscription?.cancel();
+    _unlinkSubscription?.cancel();
     super.dispose();
+  }
+
+  static const Color _bg = Color(0xFF211B20);
+  static const Color _card = Color(0xFF30232B);
+  static const Color _border = Color(0xFF792D43);
+  static const Color _rose = Color(0xFFC15B68);
+  static const Color _ivory = Color(0xFFF4EDEA);
+  static const Color _beige = Color(0xFFD6B7A6);
+  static const Color _green = Color(0xFF72D6A0);
+  static const Color _amber = Color(0xFFE3B341);
+
+  String _formatTime(DateTime? date) {
+    if (date == null) return tr('Sin datos');
+    final local = date.toLocal();
+    final hh = local.hour.toString().padLeft(2, '0');
+    final mm = local.minute.toString().padLeft(2, '0');
+    final dd = local.day.toString().padLeft(2, '0');
+    final mo = local.month.toString().padLeft(2, '0');
+    return '$dd/$mo · $hh:$mm';
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        backgroundColor: _bg,
+        body: Center(child: CircularProgressIndicator(color: _rose)),
       );
     }
 
-    if (!_locationAuthorized) {
-      return const Scaffold(
-        body: Center(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Text(
-              'La ubicación no está autorizada. '
-              'La telemetría permanecerá oculta hasta que todos los tutores '
-              'autoricen este propósito.',
-              textAlign: TextAlign.center,
+    final study = _studyMode;
+    final studyActive = study.isActiveAt(DateTime.now());
+
+    return Scaffold(
+      backgroundColor: _bg,
+      appBar: AppBar(
+        backgroundColor: _bg,
+        foregroundColor: _ivory,
+        elevation: 0,
+        title: const Text('Vesta Tracker'),
+      ),
+      body: RefreshIndicator(
+        color: _rose,
+        onRefresh: _refreshScreenAuthorization,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 30),
+          children: [
+            if (studyActive) ...[
+              _studyBanner(study),
+              const SizedBox(height: 14),
+            ],
+            _sosButton(),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: _actionButton(
+                    Icons.front_hand_rounded,
+                    tr('Pedir permiso'),
+                    () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => RequestScreen(childId: widget.childId),
+                    )),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _actionButton(
+                    Icons.visibility_rounded,
+                    tr('Qué comparte Vesta'),
+                    () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const TransparencyScreen(),
+                    )),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            _protectionCard(),
+            const SizedBox(height: 14),
+            _locationCard(),
+            const SizedBox(height: 14),
+            UsageAccessCard(
+              onPermissionGranted: () async {
+                // First collection: right after the permission is granted.
+                await UsageReportService.collectDailyReport(
+                  childId: widget.childId,
+                  db: FirebaseFirestore.instance,
+                );
+
+                // Second attempt: picks up events Android may still have
+                // been finishing updating.
+                await Future<void>.delayed(const Duration(seconds: 5));
+                await UsageReportService.collectDailyReport(
+                  childId: widget.childId,
+                  db: FirebaseFirestore.instance,
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            _filtersCard(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sosButton() {
+    return Material(
+      color: const Color(0xFFB3261E),
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        // Press and hold avoids accidental sends from a pocket.
+        onLongPress: _sendingSos ? null : _sendSos,
+        onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(tr('Mantén pulsado el botón para enviar el aviso SOS.')),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+          child: Row(
+            children: [
+              _sendingSos
+                  ? const SizedBox(
+                      width: 34,
+                      height: 34,
+                      child: CircularProgressIndicator(color: Colors.white),
+                    )
+                  : const Icon(Icons.sos_rounded, color: Colors.white, size: 38),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tr('Emergencia'),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Text(
+                      tr('Mantén pulsado para avisar a tus tutores con tu ubicación'),
+                      style: TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _actionButton(IconData icon, String label, VoidCallback onTap) {
+    return Material(
+      color: _card,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: _border),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: _rose, size: 28),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: _ivory,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  BoxDecoration get _cardDecoration => BoxDecoration(
+        color: _card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _border),
+      );
+
+  Widget _studyBanner(StudyModeState study) {
+    final until = study.currentEnd(DateTime.now());
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [Color(0xFF3B5BA5), _rose]),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.menu_book_rounded, color: Colors.white, size: 34),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  tr('Modo estudio activo'),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  until == null
+                      ? tr('Solo están disponibles las apps permitidas por tu tutor.')
+                      : tr('Hasta las {0}:{1}. Solo están disponibles las apps permitidas.', [until.hour.toString().padLeft(2, '0'), until.minute.toString().padLeft(2, '0')]),
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                ),
+              ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusRow(IconData icon, String label, bool ok, {String? okText}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: _beige),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(label, style: const TextStyle(color: _ivory)),
+          ),
+          Text(
+            ok ? (okText ?? tr('Activo')) : tr('No autorizado'),
+            style: TextStyle(
+              color: ok ? _green : _beige.withValues(alpha: 0.7),
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _protectionCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDecoration,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                _offline ? Icons.cloud_off_rounded : Icons.verified_user_rounded,
+                color: _offline ? _amber : _rose,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _offline ? tr('Protección sin conexión') : tr('Protección activa'),
+                  style: const TextStyle(
+                    color: _ivory,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _offline
+                ? tr('Se mantienen las últimas reglas recibidas. Última verificación: {0}.', [_formatTime(_lastVerifiedAt)])
+                : tr('Última verificación: {0}.', [_formatTime(_lastVerifiedAt)]),
+            style: TextStyle(color: _beige.withValues(alpha: 0.9), fontSize: 12),
+          ),
+          const Divider(color: _border, height: 22),
+          _statusRow(Icons.my_location_rounded, tr('Ubicación'), _locationAuthorized),
+          _statusRow(
+            Icons.apps_rounded,
+            tr('Control de aplicaciones'),
+            _appFilteringAuthorized,
+          ),
+          _statusRow(
+            Icons.dns_rounded,
+            tr('Filtro de sitios web'),
+            _domainFilteringAuthorized,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _locationCard() {
+    if (!_locationAuthorized) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: _cardDecoration,
+        child: Text(
+          tr('La ubicación no está autorizada. No se comparte hasta que todos los tutores autoricen este propósito.'),
+          style: TextStyle(color: _beige, fontSize: 12, height: 1.5),
         ),
       );
     }
 
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
+      stream: _telemetryStream ??= FirebaseFirestore.instance
           .collection('telemetria')
           .doc(widget.childId)
-          .snapshots(),
+          .snapshots(includeMetadataChanges: true),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
+        final data = snapshot.data?.data();
+        final pending = snapshot.data?.metadata.hasPendingWrites ?? false;
+        final captured = data?['capturedAt'];
+        final server = data?['timestamp'];
+        final date = captured is Timestamp
+            ? captured.toDate()
+            : server is Timestamp
+                ? server.toDate()
+                : null;
 
-        if (snapshot.hasError) {
-          return Scaffold(
-            body: Center(
-              child: Text(
-                  'No se pudo consultar el estado del dispositivo: ${snapshot.error}'),
-            ),
-          );
-        }
-
-        if (!snapshot.hasData || !snapshot.data!.exists) {
-          return const Scaffold(
-            body: Center(
-                child: Text('Esperando la primera señal de ubicación...')),
-          );
-        }
-
-        final data = snapshot.data!.data() ?? {};
-        final status = data['status'];
-
-        if (status == 'desvinculado') {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _volverAConfigurarLocalmente();
-          });
-
-          return const Scaffold(
-            body: Center(
-                child: Text('El tutor ha desvinculado este dispositivo.')),
-          );
-        }
-
-        return Scaffold(
-          backgroundColor: const Color(0xFF211B20),
-          appBar: AppBar(
-            backgroundColor: const Color(0xFF211B20),
-            foregroundColor: const Color(0xFFF4EDEA),
-            elevation: 0,
-            title: const Text('Vesta Tracker'),
-          ),
-          body: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 112,
-                  height: 112,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF421827),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color(0xFFC15B68),
-                      width: 2,
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.my_location,
-                    size: 58,
-                    color: Color(0xFFC15B68),
-                  ),
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: _cardDecoration,
+          child: Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF421827),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: _rose, width: 2),
                 ),
-                const SizedBox(height: 20),
-                const Text('Rastreo activo',
-                    style: TextStyle(
-                        fontSize: 21,
+                child: const Icon(Icons.my_location, color: _rose, size: 26),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tr('ÚLTIMA SEÑAL'),
+                      style: TextStyle(
+                        color: _beige,
+                        fontSize: 12,
+                        letterSpacing: 1.5,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFFF4EDEA))),
-                const SizedBox(height: 10),
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.symmetric(horizontal: 20),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF30232B),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: const Color(0xFF792D43),
+                      ),
                     ),
-                  ),
-                  child: Column(
-                    children: [
-                      const Icon(
-                        Icons.access_time_rounded,
-                        color: Color(0xFFC15B68),
-                        size: 25,
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'ÚLTIMA SEÑAL',
-                        style: TextStyle(
-                          color: Color(0xFFD6B7A6),
-                          fontSize: 11,
-                          letterSpacing: 1.5,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        data['timestamp']?.toDate()?.toString() ??
-                            'Recibiendo...',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Color(0xFFF4EDEA),
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 18),
-                UsageAccessCard(
-                  onPermissionGranted: () async {
-                    // Primera recopilación: inmediatamente al conceder el permiso.
-                    await UsageReportService.collectDailyReport(
-                      childId: widget.childId,
-                      db: FirebaseFirestore.instance,
-                    );
-
-                    // Segundo intento: permite recoger eventos que Android
-                    // todavía estuviera terminando de actualizar.
-                    await Future<void>.delayed(
-                      const Duration(seconds: 5),
-                    );
-                    await UsageReportService.collectDailyReport(
-                      childId: widget.childId,
-                      db: FirebaseFirestore.instance,
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 20),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 16,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF30232B),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: const Color(0xFF792D43),
+                    const SizedBox(height: 4),
+                    Text(
+                      snapshot.hasError
+                          ? tr('No disponible')
+                          : date == null
+                              ? tr('Esperando la primera señal...')
+                              : _formatTime(date),
+                      style: const TextStyle(color: _ivory, fontSize: 15),
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.shield_outlined,
-                        color: Color(0xFFC15B68),
-                        size: 27,
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
+                    if (pending)
+                      Padding(
+                        padding: EdgeInsets.only(top: 4),
                         child: Text(
-                          'Filtros de protección sincronizados',
-                          style: TextStyle(
-                            color: Color(0xFFF4EDEA),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
+                          tr('Pendiente de enviar (sin conexión)'),
+                          style: TextStyle(color: _amber, fontSize: 12),
                         ),
                       ),
-                      Container(
-                        constraints: const BoxConstraints(
-                          minWidth: 42,
-                          minHeight: 42,
-                        ),
-                        alignment: Alignment.center,
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF421827),
-                          borderRadius: BorderRadius.circular(13),
-                          border: Border.all(
-                            color: const Color(0xFFC15B68),
-                          ),
-                        ),
-                        child: Text(
-                          '${_reglasActuales.length}',
-                          style: const TextStyle(
-                            color: Color(0xFFF4EDEA),
-                            fontSize: 19,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         );
       },
+    );
+  }
+
+  Widget _filtersCard() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: _cardDecoration,
+      child: Row(
+        children: [
+          const Icon(Icons.shield_outlined, color: _rose, size: 27),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              tr('Filtros de protección sincronizados'),
+              style: TextStyle(
+                color: _ivory,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          Container(
+            constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF421827),
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(color: _rose),
+            ),
+            child: Text(
+              '${_reglasActuales.length}',
+              style: const TextStyle(
+                color: _ivory,
+                fontSize: 19,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

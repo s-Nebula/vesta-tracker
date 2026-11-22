@@ -12,6 +12,7 @@ import 'screens/tracker_active_screen.dart';
 import 'screens/success_screen.dart';
 import 'screens/accessibility_permission_screen.dart';
 
+import 'package:vesta_tracker/l10n/tr.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -32,12 +33,14 @@ void main() async {
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(const AndroidNotificationChannel(
+      ?.createNotificationChannel(AndroidNotificationChannel(
         'vesta_tracker_channel',
         'Vesta Tracker',
-        description: 'Canal de seguridad para rastreo en tiempo real',
+        description: tr('Canal de seguridad para rastreo en tiempo real'),
         importance: Importance.high,
       ));
+
+  await LanguageNotifier.load();
 
   final prefs = await SharedPreferences.getInstance();
   final String? childIdSaved = prefs.getString('child_id');
@@ -122,7 +125,7 @@ class _VestaTrackerAppState extends State<VestaTrackerApp> {
         scaffoldBackgroundColor: const Color(0xFF211B20),
       ),
       themeMode: themeNotifier
-          .themeMode, // Aplica Claro, Oscuro o Sistema dinámicamente
+          .themeMode, // Applies Light, Dark or System dynamically
       routerConfig: _router,
     );
   }

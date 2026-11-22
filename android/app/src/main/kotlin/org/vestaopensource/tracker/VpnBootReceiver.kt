@@ -12,24 +12,10 @@ class VpnBootReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "VestaVpnBoot"
         private const val PREFS = "FlutterSharedPreferences"
-        private const val CHECKED_AT_KEY =
-            "flutter.privacy_authorization_checked_at_ms"
-        private const val DOMAIN_FILTERING_KEY =
-            "flutter.privacy_domain_filtering_enabled"
-        private const val AUTHORIZATION_LEASE_MS = 120_000L
     }
 
-    private fun isAuthorized(context: Context): Boolean {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val checkedAt = prefs.getLong(CHECKED_AT_KEY, 0L)
-        val now = System.currentTimeMillis()
-        val age = now - checkedAt
-
-        return checkedAt > 0L &&
-            age >= 0L &&
-            age < AUTHORIZATION_LEASE_MS &&
-            prefs.getBoolean(DOMAIN_FILTERING_KEY, false)
-    }
+    private fun isAuthorized(context: Context): Boolean =
+        PrivacyLease.isAuthorized(context, "domain_filtering")
 
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action != Intent.ACTION_BOOT_COMPLETED) return

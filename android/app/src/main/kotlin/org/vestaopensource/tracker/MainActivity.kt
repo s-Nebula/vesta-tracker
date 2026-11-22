@@ -15,29 +15,42 @@ import java.io.ByteArrayOutputStream
 
 class MainActivity : FlutterActivity() {
 
+    companion object {
+        const val EXTRA_REQUEST_PACKAGE = "vesta_request_package"
+        const val EXTRA_REQUEST_APP_NAME = "vesta_request_app_name"
+        const val EXTRA_REQUEST_TYPE = "vesta_request_type"
+    }
+
+    /** Pending request opened from the block notification. */
+    private var pendingRequest: Map<String, String>? = null
+
+    private fun captureRequest(intent: Intent?) {
+        val pkg = intent?.getStringExtra(EXTRA_REQUEST_PACKAGE) ?: return
+        pendingRequest = mapOf(
+            "packageName" to pkg,
+            "appName" to (intent.getStringExtra(EXTRA_REQUEST_APP_NAME) ?: pkg),
+            "type" to (intent.getStringExtra(EXTRA_REQUEST_TYPE) ?: "unlock_app")
+        )
+        intent.removeExtra(EXTRA_REQUEST_PACKAGE)
+    }
+
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        captureRequest(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureRequest(intent)
+    }
+
     private val CHANNEL = "com.vesta.blocker/apps"
     private val VPN_REQUEST_CODE = 7313
     private var pendingVpnResult: MethodChannel.Result? = null
 
-    private fun isDomainFilteringAuthorized(): Boolean {
-        val prefs = getSharedPreferences(
-            "FlutterSharedPreferences",
-            MODE_PRIVATE
-        )
-        val checkedAt = prefs.getLong(
-            "flutter.privacy_authorization_checked_at_ms",
-            0L
-        )
-        val age = System.currentTimeMillis() - checkedAt
-
-        return checkedAt > 0L &&
-            age >= 0L &&
-            age < 120_000L &&
-            prefs.getBoolean(
-                "flutter.privacy_domain_filtering_enabled",
-                false
-            )
-    }
+    private fun isDomainFilteringAuthorized(): Boolean =
+        PrivacyLease.isAuthorized(this, "domain_filtering")
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -124,6 +137,12 @@ class MainActivity : FlutterActivity() {
                             )
                         }
                     }
+                }
+
+                "consumePendingRequest" -> {
+                    val request = pendingRequest
+                    pendingRequest = null
+                    result.success(request)
                 }
 
                 "stopDnsVpn" -> {

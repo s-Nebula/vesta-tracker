@@ -7,7 +7,11 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import '../location_service.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../services/pairing_payload.dart';
+import '../services/privacy_authorization_service.dart';
+import 'qr_scan_screen.dart';
 
+import 'package:vesta_tracker/l10n/tr.dart';
 class SetupScreen extends StatefulWidget {
   const SetupScreen({super.key});
 
@@ -38,13 +42,26 @@ class _SetupScreenState extends State<SetupScreen> {
     return statuses[Permission.locationAlways]?.isGranted ?? false;
   }
 
+  Future<void> _escanearQr() async {
+    if (_isLoading) return;
+
+    final code = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const QrScanScreen()),
+    );
+
+    if (code == null || !mounted) return;
+
+    _controller.text = code;
+    await _vincular();
+  }
+
   Future<void> _vincular() async {
     final codigo = _controller.text.trim().toUpperCase();
 
-    if (!RegExp(r'^[A-F0-9]{10}$').hasMatch(codigo)) {
+    if (!PairingPayload.isValidCode(codigo)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Introduce un código válido de 10 caracteres.'),
+        SnackBar(
+          content: Text(tr('Introduce un código válido de 10 caracteres.')),
         ),
       );
       return;
@@ -61,21 +78,21 @@ class _SetupScreenState extends State<SetupScreen> {
       }
 
       if (user == null || !user.isAnonymous) {
-        throw Exception('No se pudo autenticar el dispositivo.');
+        throw Exception(tr('No se pudo autenticar el dispositivo.'));
       }
 
-      // Los permisos se solicitan antes de consumir el código de un solo uso.
+      // Permissions are requested before using up the single-use code.
       final permisosConcedidos = await _solicitarPermisos();
 
       if (!permisosConcedidos) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text(
-                "Es necesario permitir la ubicación 'Siempre' para el rastreo.",
+              content: Text(
+                tr('Es necesario permitir la ubicación \'Siempre\' para el rastreo.'),
               ),
               action: SnackBarAction(
-                label: 'Configuración',
+                label: tr('Configuración'),
                 onPressed: openAppSettings,
               ),
             ),
@@ -92,16 +109,18 @@ class _SetupScreenState extends State<SetupScreen> {
       final childId = result['childId'] as String?;
 
       if (childId == null || childId.isEmpty) {
-        throw Exception('El servidor no devolvió el identificador del perfil.');
+        throw Exception(tr('El servidor no devolvió el identificador del perfil.'));
       }
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('child_id', childId);
-      await prefs.remove('parent_id');
 
       final service = FlutterBackgroundService();
       service.invoke('stopService');
       await Future.delayed(const Duration(milliseconds: 500));
+
+      // Start from a clean state: no rules from a previous link.
+      await PrivacyAuthorizationService.clearLocalLink();
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('child_id', childId);
 
       await LocationService.initializeService();
 
@@ -111,7 +130,7 @@ class _SetupScreenState extends State<SetupScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al conectar: $e')),
+          SnackBar(content: Text(tr('No se pudo vincular: {0}', [e]))),
         );
       }
     } finally {
@@ -182,8 +201,8 @@ class _SetupScreenState extends State<SetupScreen> {
                       ),
                     ),
                     const SizedBox(height: 25),
-                    const Text(
-                      'VESTA TRACKER',
+                    Text(
+                      tr('VESTA TRACKER'),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: _ivory,
@@ -193,8 +212,8 @@ class _SetupScreenState extends State<SetupScreen> {
                       ),
                     ),
                     const SizedBox(height: 9),
-                    const Text(
-                      'Protección y tranquilidad, siempre conectados.',
+                    Text(
+                      tr('Protección y tranquilidad, siempre conectados.'),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: _beige,
@@ -222,8 +241,8 @@ class _SetupScreenState extends State<SetupScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const Text(
-                            'Vincular dispositivo',
+                          Text(
+                            tr('Vincular dispositivo'),
                             style: TextStyle(
                               color: _ivory,
                               fontSize: 21,
@@ -231,9 +250,8 @@ class _SetupScreenState extends State<SetupScreen> {
                             ),
                           ),
                           const SizedBox(height: 9),
-                          const Text(
-                            'Introduce el código de vinculación generado '
-                            'desde Vesta Padre para conectar este dispositivo.',
+                          Text(
+                            tr('Escanea el QR que aparece en la app Vesta del tutor o introduce el código de 10 caracteres.'),
                             style: TextStyle(
                               color: _beige,
                               fontSize: 13,
@@ -329,14 +347,14 @@ class _SetupScreenState extends State<SetupScreen> {
                                           color: _ivory,
                                         ),
                                       )
-                                    : const Row(
+                                    : Row(
                                         mainAxisAlignment:
                                             MainAxisAlignment.center,
                                         children: [
                                           Icon(Icons.link_rounded, size: 21),
                                           SizedBox(width: 10),
                                           Text(
-                                            'VINCULAR DISPOSITIVO',
+                                            tr('VINCULAR DISPOSITIVO'),
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
                                               letterSpacing: 0.7,
@@ -344,6 +362,53 @@ class _SetupScreenState extends State<SetupScreen> {
                                           ),
                                         ],
                                       ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Divider(
+                                  color: _beige.withValues(alpha: 0.25),
+                                ),
+                              ),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 10),
+                                child: Text(
+                                  'o',
+                                  style: TextStyle(
+                                    color: _beige.withValues(alpha: 0.7),
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: Divider(
+                                  color: _beige.withValues(alpha: 0.25),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          SizedBox(
+                            height: 52,
+                            child: OutlinedButton.icon(
+                              onPressed: _isLoading ? null : _escanearQr,
+                              icon: const Icon(Icons.qr_code_scanner_rounded),
+                              label: Text(
+                                tr('ESCANEAR CÓDIGO QR'),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.7,
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: _ivory,
+                                side: const BorderSide(color: _rose, width: 1.4),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(17),
+                                ),
                               ),
                             ),
                           ),
@@ -362,11 +427,11 @@ class _SetupScreenState extends State<SetupScreen> {
                         const SizedBox(width: 7),
                         Flexible(
                           child: Text(
-                            'Conexión protegida por Vesta',
+                            tr('Conexión protegida por Vesta'),
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: _beige.withValues(alpha: 0.8),
-                              fontSize: 11,
+                              fontSize: 12,
                             ),
                           ),
                         ),

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:app_settings/app_settings.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:vesta_tracker/l10n/tr.dart';
 class AccessibilityPermissionScreen extends StatefulWidget {
   final String childId;
 
@@ -86,8 +87,8 @@ class _AccessibilityPermissionScreenState
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No se pudieron abrir los ajustes de Android.'),
+          SnackBar(
+            content: Text(tr('No se pudieron abrir los ajustes de Android.')),
           ),
         );
       }
@@ -105,8 +106,8 @@ class _AccessibilityPermissionScreenState
         foregroundColor: _ivory,
         elevation: 0,
         automaticallyImplyLeading: false,
-        title: const Text(
-          'Configurar protección',
+        title: Text(
+          tr('Configurar protección'),
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
@@ -136,8 +137,8 @@ class _AccessibilityPermissionScreenState
                 ),
               ),
               const SizedBox(height: 28),
-              const Text(
-                'Activa el servicio de accesibilidad',
+              Text(
+                tr('Activa el servicio de accesibilidad'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: _ivory,
@@ -146,10 +147,8 @@ class _AccessibilityPermissionScreenState
                 ),
               ),
               const SizedBox(height: 12),
-              const Text(
-                'Este paso permite que Vesta Tracker detecte cuándo se '
-                'abren las aplicaciones protegidas y aplique las reglas '
-                'de bloqueo configuradas desde Vesta Padre.',
+              Text(
+                tr('Este paso permite que Vesta Tracker detecte cuándo se abren las aplicaciones protegidas y aplique las reglas de bloqueo configuradas desde Vesta Padre.'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: _beige,
@@ -165,11 +164,11 @@ class _AccessibilityPermissionScreenState
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: _wine),
                 ),
-                child: const Column(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Cómo activarlo',
+                      tr('Cómo activarlo'),
                       style: TextStyle(
                         color: _ivory,
                         fontWeight: FontWeight.bold,
@@ -179,24 +178,23 @@ class _AccessibilityPermissionScreenState
                     SizedBox(height: 16),
                     _InstructionStep(
                       number: '1',
-                      text: 'Pulsa «Abrir ajustes de accesibilidad».',
+                      text: tr('Pulsa «Abrir ajustes de accesibilidad».'),
                     ),
                     _InstructionStep(
                       number: '2',
-                      text: 'Busca Vesta Tracker en la lista de servicios.',
+                      text: tr('Busca Vesta Tracker en la lista de servicios.'),
                     ),
                     _InstructionStep(
                       number: '3',
-                      text: 'Entra en Vesta Tracker y activa el interruptor.',
+                      text: tr('Entra en Vesta Tracker y activa el interruptor.'),
                     ),
                     _InstructionStep(
                       number: '4',
-                      text: 'Confirma la activación si Android lo solicita.',
+                      text: tr('Confirma la activación si Android lo solicita.'),
                     ),
                     SizedBox(height: 12),
                     Text(
-                      'Después, vuelve a esta aplicación. Comprobaremos '
-                      'automáticamente si el servicio quedó activado.',
+                      tr('Después, vuelve a esta aplicación. Comprobaremos automáticamente si el servicio quedó activado.'),
                       style: TextStyle(
                         color: _beige,
                         fontSize: 13,
@@ -235,12 +233,12 @@ class _AccessibilityPermissionScreenState
                     Expanded(
                       child: Text(
                         _checking
-                            ? 'Comprobando el servicio...'
+                            ? tr('Comprobando el servicio...')
                             : isEnabled
-                                ? 'Accesibilidad activada correctamente'
+                                ? tr('Accesibilidad activada correctamente')
                                 : _enabled == null
-                                    ? 'No se pudo comprobar el estado'
-                                    : 'Activación pendiente',
+                                    ? tr('No se pudo comprobar el estado')
+                                    : tr('Activación pendiente'),
                         style: const TextStyle(
                           color: _ivory,
                           fontWeight: FontWeight.w600,
@@ -257,7 +255,7 @@ class _AccessibilityPermissionScreenState
                 child: ElevatedButton.icon(
                   onPressed: _openSettings,
                   icon: const Icon(Icons.settings_rounded),
-                  label: const Text('Abrir ajustes de accesibilidad'),
+                  label: Text(tr('Abrir ajustes de accesibilidad')),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _wine,
                     foregroundColor: _ivory,
@@ -276,7 +274,7 @@ class _AccessibilityPermissionScreenState
               OutlinedButton.icon(
                 onPressed: _checking ? null : _checkAccessibility,
                 icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Comprobar de nuevo'),
+                label: Text(tr('Comprobar de nuevo')),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _beige,
                   side: const BorderSide(color: _wine),
@@ -294,7 +292,7 @@ class _AccessibilityPermissionScreenState
                       ? () => context.go('/tracker/${widget.childId}')
                       : null,
                   icon: const Icon(Icons.arrow_forward_rounded),
-                  label: const Text('CONTINUAR A VESTA TRACKER'),
+                  label: Text(tr('CONTINUAR A VESTA TRACKER')),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _rose,
                     disabledBackgroundColor: _surface,
@@ -312,12 +310,12 @@ class _AccessibilityPermissionScreenState
                 ),
               ),
               const SizedBox(height: 18),
-              const Text(
-                'Este permiso se administra desde los ajustes del sistema Android.',
+              Text(
+                tr('Este permiso se administra desde los ajustes del sistema Android.'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: _beige,
-                  fontSize: 11,
+                  fontSize: 12,
                 ),
               ),
             ],
