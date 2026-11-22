@@ -156,6 +156,16 @@ class _AccessibilityPermissionScreenState
                   height: 1.6,
                 ),
               ),
+              const SizedBox(height: 10),
+              Text(
+                tr('Si el filtro de sitios web está activado, Vesta Tracker también lee la dirección del sitio abierto en el navegador Brave para bloquear los dominios no permitidos y avisar a Vesta Padre. No lee lo que se escribe ni el resto del contenido de la pantalla.'),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: _beige,
+                  fontSize: 14,
+                  height: 1.6,
+                ),
+              ),
               const SizedBox(height: 26),
               Container(
                 padding: const EdgeInsets.all(20),

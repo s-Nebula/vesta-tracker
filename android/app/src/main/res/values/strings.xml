@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_summary">Aplica las reglas de bloqueo configuradas desde Vesta Padre.</string>
+    <string name="accessibility_service_description">Vesta Tracker usa este servicio para detectar qué aplicación está abierta y bloquear las que el administrador restringió desde Vesta Padre. Si el filtro de sitios web está activado, también lee la dirección del sitio abierto en el navegador Brave para bloquear los dominios no permitidos y avisar a Vesta Padre. No lee lo que se escribe ni el resto del contenido de la pantalla, y no se usa con fines de accesibilidad.</string>
+</resources>

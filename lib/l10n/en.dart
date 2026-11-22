@@ -133,6 +133,8 @@ const Map<String, String> enStrings = {
       'This device is already securely connected to Vesta Parent.',
   'Este paso permite que Vesta Tracker detecte cuándo se abren las aplicaciones protegidas y aplique las reglas de bloqueo configuradas desde Vesta Padre.':
       'This step lets Vesta Tracker detect when protected apps are opened and apply the blocking rules set in Vesta Parent.',
+  'Si el filtro de sitios web está activado, Vesta Tracker también lee la dirección del sitio abierto en el navegador Brave para bloquear los dominios no permitidos y avisar a Vesta Padre. No lee lo que se escribe ni el resto del contenido de la pantalla.':
+      'If the website filter is on, Vesta Tracker also reads the address of the site open in the Brave browser to block domains that are not allowed and notify Vesta Parent. It does not read what is typed or anything else on the screen.',
   'Este permiso se administra desde los ajustes del sistema Android.':
       'This permission is managed from the Android system settings.',
   'Exceso de velocidad':
