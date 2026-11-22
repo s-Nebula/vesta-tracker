@@ -819,9 +819,7 @@ class LocationService {
 
         if (offlineFor >= _offlineAlertThreshold) {
           final minutes = offlineFor.inMinutes;
-          final duration = minutes >= 120
-              ? '${(minutes / 60).toStringAsFixed(1)} horas'
-              : '$minutes minutos';
+          final duration = formatOfflineDuration(minutes, english: isEnglish);
 
           await addAlert(
             purpose: 'device_status',
@@ -884,4 +882,15 @@ class LocationService {
       service.stopSelf();
     });
   }
+}
+
+/// "25 minutos" / "2.5 horas", or "25 minutes" / "2.5 hours" in English.
+/// Same wording as Vesta Parent and the API.
+String formatOfflineDuration(int minutes, {required bool english}) {
+  if (minutes < 120) {
+    if (english) return '$minutes ${minutes == 1 ? 'minute' : 'minutes'}';
+    return '$minutes ${minutes == 1 ? 'minuto' : 'minutos'}';
+  }
+  final hours = (minutes / 60).toStringAsFixed(1).replaceAll('.0', '');
+  return english ? '$hours hours' : '$hours horas';
 }
