@@ -12,6 +12,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
+import org.vestaopensource.tracker.update.UpdaterBridge
 
 class MainActivity : FlutterActivity() {
 
@@ -39,6 +40,16 @@ class MainActivity : FlutterActivity() {
         captureRequest(intent)
     }
 
+    override fun onResume() {
+        super.onResume()
+        UpdaterBridge.onResume(this)
+    }
+
+    override fun onPause() {
+        UpdaterBridge.onPause(this)
+        super.onPause()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -54,6 +65,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        UpdaterBridge.register(flutterEngine, this)
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,

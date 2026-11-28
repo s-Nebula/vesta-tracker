@@ -18,7 +18,10 @@ class VpnBootReceiver : BroadcastReceiver() {
         PrivacyLease.isAuthorized(context, "domain_filtering")
 
     override fun onReceive(context: Context, intent: Intent?) {
-        if (intent?.action != Intent.ACTION_BOOT_COMPLETED) return
+        // MY_PACKAGE_REPLACED: an update stops the VPN; start it again.
+        if (intent?.action != Intent.ACTION_BOOT_COMPLETED &&
+            intent?.action != Intent.ACTION_MY_PACKAGE_REPLACED
+        ) return
 
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val childId = prefs.getString("flutter.child_id", null)

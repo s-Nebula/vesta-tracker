@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
+import 'services/app_updater.dart';
 import 'theme_notifier.dart';
 import 'screens/setup_screen.dart';
 import 'screens/tracker_active_screen.dart';
@@ -51,6 +53,9 @@ void main() async {
       child: VestaTrackerApp(initialChildId: childIdSaved),
     ),
   );
+
+  // New version? (Also checked every 6 h on Wi-Fi by the native updater.)
+  unawaited(AppUpdater.checkOnLaunch());
 }
 
 class VestaTrackerApp extends StatefulWidget {

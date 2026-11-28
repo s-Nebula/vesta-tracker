@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:go_router/go_router.dart';
 import '../location_service.dart';
 import '../widgets/usage_access_card.dart';
+import '../widgets/auto_update_card.dart';
 import '../services/usage_report_service.dart';
 import '../services/api_client.dart';
 import '../services/privacy_authorization_service.dart';
@@ -491,6 +492,7 @@ class _TrackerActiveScreenState extends State<TrackerActiveScreen>
             _protectionCard(),
             const SizedBox(height: 14),
             _locationCard(),
+            const AutoUpdateCard(),
             const SizedBox(height: 14),
             UsageAccessCard(
               onPermissionGranted: () async {

@@ -331,4 +331,12 @@ const Map<String, String> enStrings = {
       'LAST SIGNAL',
   'Última verificación: {0}.':
       'Last check: {0}.',
+  'Actualización {0} pendiente':
+      'Update {0} pending',
+  'Actualizaciones automáticas':
+      'Automatic updates',
+  'Permite una vez que Vesta Tracker instale sus actualizaciones. Así se mantiene al día sin que tengas que descargar nada.':
+      'Allow Vesta Tracker once to install its updates. That way it stays up to date without you downloading anything.',
+  'Permitir':
+      'Allow',
 };
